@@ -22,6 +22,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/attestantio/vouch/services/synccommitteeaggregator"
 	"github.com/attestantio/vouch/services/synccommitteemessenger"
+	"github.com/attestantio/vouch/util"
 	e2wtypes "github.com/wealdtech/go-eth2-wallet-types/v2"
 )
 
@@ -113,7 +114,7 @@ func (s *Service) scheduleSyncCommitteeMessages(ctx context.Context,
 			if err := s.scheduler.ScheduleJob(ctx,
 				"Prepare for sync committee messages",
 				fmt.Sprintf("Prepare sync committee messages for slot %d", duty.Slot()),
-				prepareJobTime,
+				prepareJobTime.Add(util.TimeDelayHack()),
 				s.prepareMessageSyncCommittee,
 				duty,
 			); err != nil {
@@ -196,7 +197,7 @@ func (s *Service) messageSyncCommittee(ctx context.Context, data interface{}) {
 		if err := s.scheduler.ScheduleJob(ctx,
 			"Aggregate sync committee messages",
 			fmt.Sprintf("Sync committee aggregation for slot %d", duty.Slot()),
-			s.chainTimeService.StartOfSlot(duty.Slot()).Add(s.syncCommitteeAggregationDelay),
+			s.chainTimeService.StartOfSlot(duty.Slot()).Add(s.syncCommitteeAggregationDelay).Add(util.TimeDelayHack()),
 			s.syncCommitteeAggregator.Aggregate,
 			aggregatorDuty,
 		); err != nil {

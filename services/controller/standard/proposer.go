@@ -21,6 +21,7 @@ import (
 	"github.com/attestantio/go-eth2-client/api"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/attestantio/vouch/services/beaconblockproposer"
+	"github.com/attestantio/vouch/util"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -93,7 +94,7 @@ func (s *Service) scheduleProposals(ctx context.Context,
 				if err := s.scheduler.ScheduleJob(ctx,
 					"Propose check",
 					fmt.Sprintf("Early beacon block proposal for slot %d", duty.Slot()),
-					s.chainTimeService.StartOfSlot(duty.Slot()),
+					s.chainTimeService.StartOfSlot(duty.Slot()).Add(util.TimeDelayHack()),
 					s.proposeEarly,
 					duty,
 				); err != nil {
@@ -104,7 +105,7 @@ func (s *Service) scheduleProposals(ctx context.Context,
 			if err := s.scheduler.ScheduleJob(ctx,
 				"Propose",
 				fmt.Sprintf("Beacon block proposal for slot %d", duty.Slot()),
-				s.chainTimeService.StartOfSlot(duty.Slot()).Add(s.maxProposalDelay),
+				s.chainTimeService.StartOfSlot(duty.Slot()).Add(s.maxProposalDelay).Add(util.TimeDelayHack()),
 				s.beaconBlockProposer.Propose,
 				duty,
 			); err != nil {

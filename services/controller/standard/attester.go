@@ -23,6 +23,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/attestantio/vouch/services/attestationaggregator"
 	"github.com/attestantio/vouch/services/attester"
+	"github.com/attestantio/vouch/util"
 )
 
 // scheduleAttestations schedules attestations for the given epoch and validator indices.
@@ -111,7 +112,7 @@ func (s *Service) scheduleAttestations(ctx context.Context,
 			if err := s.scheduler.ScheduleJob(ctx,
 				"Attest",
 				fmt.Sprintf("Attestations for slot %d", duty.Slot()),
-				jobTime,
+				jobTime.Add(util.TimeDelayHack()),
 				s.AttestAndScheduleAggregate,
 				duty,
 			); err != nil {
@@ -211,7 +212,7 @@ func (s *Service) AttestAndScheduleAggregate(ctx context.Context, data interface
 			if err := s.scheduler.ScheduleJob(ctx,
 				"Aggregate attestations",
 				fmt.Sprintf("Beacon block attestation aggregation for slot %d committee %d", attestation.Data.Slot, attestation.Data.Index),
-				s.chainTimeService.StartOfSlot(attestation.Data.Slot).Add(s.attestationAggregationDelay),
+				s.chainTimeService.StartOfSlot(attestation.Data.Slot).Add(s.attestationAggregationDelay).Add(util.TimeDelayHack()),
 				s.attestationAggregator.Aggregate,
 				aggregatorDuty,
 			); err != nil {
