@@ -8,10 +8,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 # SP1 verifier for Succinct's zkVM
-sp1-verifier = { version = "4.0", default-features = false }
-
-# Note: ZKM/Ziren verifier may need to be added when available
-# For now, we'll focus on SP1 which is the most widely used
+sp1-verifier = { git = "https://github.com/succinctlabs/hypercube-verifier.git", branch = "ethproofs_demo" }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

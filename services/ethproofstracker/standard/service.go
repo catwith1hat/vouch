@@ -43,6 +43,12 @@ type Service struct {
 	provenEpochsMu sync.RWMutex
 	provenEpochs   map[phase0.Epoch]phase0.Root
 
+	// Verification keys: map[clusterID]vkData.
+	vkeysMu         sync.RWMutex
+	vkeys           map[string][]byte
+	vkeyHashes      map[string]string
+	lastPolledVKeys time.Time
+
 	// Track polling state.
 	lastPolledEpoch phase0.Epoch
 	lastPollTime    time.Time
@@ -77,7 +83,14 @@ func New(ctx context.Context, params ...Parameter) (*Service, error) {
 		timeout:          parameters.timeout,
 		cacheSize:        parameters.cacheSize,
 		provenEpochs:     make(map[phase0.Epoch]phase0.Root),
+		vkeys:            make(map[string][]byte),
+		vkeyHashes:       make(map[string]string),
 		lastPolledEpoch:  0,
+	}
+
+	// Fetch initial verification keys.
+	if err := s.updateVerificationKeys(ctx); err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch initial verification keys")
 	}
 
 	// Schedule periodic polling job.
@@ -90,6 +103,19 @@ func New(ctx context.Context, params ...Parameter) (*Service, error) {
 		s.poll,
 	); err != nil {
 		return nil, errors.Wrap(err, "failed to schedule periodic polling")
+	}
+
+	// Schedule periodic verification key update.
+	if err := parameters.scheduler.SchedulePeriodicJob(ctx,
+		"Ethproofs tracker",
+		"Update verification keys",
+		func(_ context.Context) (time.Time, error) {
+			// Update keys every hour.
+			return time.Now().Add(time.Hour), nil
+		},
+		s.updateVerificationKeys,
+	); err != nil {
+		return nil, errors.Wrap(err, "failed to schedule verification key update")
 	}
 
 	// Schedule periodic cache cleanup.

@@ -51,16 +51,31 @@ const (
 )
 
 // VerifyEthproof verifies a ZK proof using the Rust FFI verifier
-func VerifyEthproof(zkvm ZkVMType, proofData []byte, blockRoot phase0.Root) (VerifyResult, error) {
+func VerifyEthproof(zkvm ZkVMType, proofData []byte, vkeyHash string, vkData []byte, blockRoot phase0.Root) (VerifyResult, error) {
 	if len(proofData) == 0 {
 		return VerifyError, fmt.Errorf("proof data is empty")
 	}
+
+	// Prepare VK data pointer
+	var vkPtr *C.uint8_t
+	var vkLen C.size_t
+	if len(vkData) > 0 {
+		vkPtr = (*C.uint8_t)(unsafe.Pointer(&vkData[0]))
+		vkLen = C.size_t(len(vkData))
+	}
+
+	// Prepare VKey hash C string
+	cVkeyHash := C.CString(vkeyHash)
+	defer C.free(unsafe.Pointer(cVkeyHash))
 
 	// Call the Rust FFI function
 	result := C.verify_ethproof(
 		C.uint8_t(zkvm),
 		(*C.uint8_t)(unsafe.Pointer(&proofData[0])),
 		C.size_t(len(proofData)),
+		cVkeyHash,
+		vkPtr,
+		vkLen,
 		(*C.uint8_t)(unsafe.Pointer(&blockRoot[0])),
 	)
 

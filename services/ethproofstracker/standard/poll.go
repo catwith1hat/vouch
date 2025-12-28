@@ -15,6 +15,7 @@ package standard
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -123,7 +124,7 @@ func (s *Service) queryEthproofs(ctx context.Context, blockRoot phase0.Root) (bo
 	started := time.Now()
 
 	// Step 1: Query API to get proof metadata
-	proofID, zkvmType, err := s.queryProofMetadata(ctx, blockRoot)
+	proofID, clusterID, zkvmType, err := s.queryProofMetadata(ctx, blockRoot)
 	if err != nil {
 		monitorEthproofsAPILatency(started)
 		return false, err
@@ -141,10 +142,34 @@ func (s *Service) queryEthproofs(ctx context.Context, blockRoot phase0.Root) (bo
 		return false, errors.Wrap(err, "failed to download proof")
 	}
 
+	// Step 3: Get Verification Key (VKey) and Hash from local cache
+	s.vkeysMu.RLock()
+	vkData, vkExists := s.vkeys[clusterID]
+	vkeyHash, hashExists := s.vkeyHashes[clusterID]
+	s.vkeysMu.RUnlock()
+
+	if !vkExists || !hashExists {
+		s.log.Warn().
+			Str("cluster_id", clusterID).
+			Str("proof_id", proofID).
+			Msg("Verification key or hash not found for cluster; attempting re-fetch")
+		
+		if err := s.updateVerificationKeys(ctx); err == nil {
+			s.vkeysMu.RLock()
+			vkData, vkExists = s.vkeys[clusterID]
+			vkeyHash, hashExists = s.vkeyHashes[clusterID]
+			s.vkeysMu.RUnlock()
+		}
+	}
+
+	if !vkExists || !hashExists {
+		return false, fmt.Errorf("verification key/hash not found for cluster %s", clusterID)
+	}
+
 	monitorEthproofsAPILatency(started)
 
-	// Step 3: Cryptographically verify the proof using Rust FFI
-	result, err := VerifyEthproof(zkvmType, proofData, blockRoot)
+	// Step 4: Cryptographically verify the proof using Rust FFI
+	result, err := VerifyEthproof(zkvmType, proofData, vkeyHash, vkData, blockRoot)
 	if err != nil {
 		return false, errors.Wrap(err, "failed to call verifier")
 	}
@@ -153,6 +178,7 @@ func (s *Service) queryEthproofs(ctx context.Context, blockRoot phase0.Root) (bo
 	case VerifySuccess:
 		s.log.Debug().
 			Str("proof_id", proofID).
+			Str("cluster_id", clusterID).
 			Str("block_root", fmt.Sprintf("%#x", blockRoot)).
 			Uint8("zkvm", uint8(zkvmType)).
 			Msg("Proof verified successfully via FFI")
@@ -161,6 +187,7 @@ func (s *Service) queryEthproofs(ctx context.Context, blockRoot phase0.Root) (bo
 	case VerifyFailed:
 		s.log.Warn().
 			Str("proof_id", proofID).
+			Str("cluster_id", clusterID).
 			Str("block_root", fmt.Sprintf("%#x", blockRoot)).
 			Uint8("zkvm", uint8(zkvmType)).
 			Msg("Proof verification failed")
@@ -174,8 +201,8 @@ func (s *Service) queryEthproofs(ctx context.Context, blockRoot phase0.Root) (bo
 	}
 }
 
-// queryProofMetadata queries the API for proof metadata and returns the proof ID and zkVM type if it exists.
-func (s *Service) queryProofMetadata(ctx context.Context, blockRoot phase0.Root) (string, ZkVMType, error) {
+// queryProofMetadata queries the API for proof metadata and returns the proof ID, cluster ID, and zkVM type if it exists.
+func (s *Service) queryProofMetadata(ctx context.Context, blockRoot phase0.Root) (string, string, ZkVMType, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
@@ -184,12 +211,12 @@ func (s *Service) queryProofMetadata(ctx context.Context, blockRoot phase0.Root)
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", ZkVMSP1, errors.Wrap(err, "failed to create HTTP request")
+		return "", "", ZkVMSP1, errors.Wrap(err, "failed to create HTTP request")
 	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return "", ZkVMSP1, errors.Wrap(err, "failed to query ethproofs API")
+		return "", "", ZkVMSP1, errors.Wrap(err, "failed to query ethproofs API")
 	}
 	defer resp.Body.Close()
 
@@ -197,34 +224,35 @@ func (s *Service) queryProofMetadata(ctx context.Context, blockRoot phase0.Root)
 	case http.StatusOK:
 		var result struct {
 			Proofs []struct {
-				ID     string `json:"id"`
-				ZkvmID string `json:"zkvm_id"`
+				ID        string `json:"id"`
+				ClusterID string `json:"cluster_id"`
+				ZkvmID    string `json:"zkvm_id"`
 			} `json:"proofs"`
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return "", ZkVMSP1, errors.Wrap(err, "failed to decode ethproofs response")
+			return "", "", ZkVMSP1, errors.Wrap(err, "failed to decode ethproofs response")
 		}
 
-		// Return the first proof ID if available
+		// Return the first proof info if available
 		if len(result.Proofs) > 0 {
 			zkvm := parseZkvmType(result.Proofs[0].ZkvmID)
-			return result.Proofs[0].ID, zkvm, nil
+			return result.Proofs[0].ID, result.Proofs[0].ClusterID, zkvm, nil
 		}
-		return "", ZkVMSP1, nil
+		return "", "", ZkVMSP1, nil
 
 	case http.StatusNotFound:
-		return "", ZkVMSP1, nil
+		return "", "", ZkVMSP1, nil
 
 	default:
-		return "", ZkVMSP1, fmt.Errorf("ethproofs API returned status %d", resp.StatusCode)
+		return "", "", ZkVMSP1, fmt.Errorf("ethproofs API returned status %d", resp.StatusCode)
 	}
 }
 
 // parseZkvmType converts a zkvm_id string to a ZkVMType
 func parseZkvmType(zkvmID string) ZkVMType {
 	switch zkvmID {
-	case "sp1", "SP1":
+	case "sp1", "SP1", "sp1-hypercube":
 		return ZkVMSP1
 	case "zkm", "ZKM", "ziren", "Ziren":
 		return ZkVMZKM
@@ -271,6 +299,66 @@ func (s *Service) downloadProof(ctx context.Context, proofID string) ([]byte, er
 		Msg("Downloaded proof binary")
 
 	return proofBytes, nil
+}
+
+// updateVerificationKeys fetches active provers and updates the local VKey cache.
+func (s *Service) updateVerificationKeys(ctx context.Context) error {
+	reqCtx, cancel := context.WithTimeout(ctx, s.timeout*2)
+	defer cancel()
+
+	url := fmt.Sprintf("%s/verification-keys/active", s.ethproofsBaseURL)
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to create HTTP request")
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return errors.Wrap(err, "failed to query active verification keys")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	var provers []struct {
+		ClusterID string `json:"cluster_id"`
+		Zkvm      string `json:"zkvm"`
+		VkPath    string `json:"vk_path"`
+		VkBinary  string `json:"vk_binary"` // Base64 encoded
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&provers); err != nil {
+		return errors.Wrap(err, "failed to decode provers response")
+	}
+
+	s.vkeysMu.Lock()
+	defer s.vkeysMu.Unlock()
+
+	for _, prover := range provers {
+		vkData, err := base64.StdEncoding.DecodeString(prover.VkBinary)
+		if err != nil {
+			s.log.Warn().Err(err).Str("cluster_id", prover.ClusterID).Msg("Failed to decode VKey binary")
+			continue
+		}
+
+		s.vkeys[prover.ClusterID] = vkData
+		// Note: The API response 'vk_path' seems to contain the vkey hash in the lighthouse implementation.
+		// If the API evolves to include a specific 'vkey_hash' field, we should use that.
+		s.vkeyHashes[prover.ClusterID] = prover.VkPath
+		
+		s.log.Trace().
+			Str("cluster_id", prover.ClusterID).
+			Str("zkvm", prover.Zkvm).
+			Str("vkey_hash", prover.VkPath).
+			Int("vk_size", len(vkData)).
+			Msg("Updated verification key")
+	}
+
+	s.lastPolledVKeys = time.Now()
+	return nil
 }
 
 // cleanCache removes old epochs from the cache.

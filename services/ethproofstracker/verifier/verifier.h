@@ -38,6 +38,9 @@ extern "C" {
  * @param zkvm_type     The zkVM type (ZKVM_SP1, ZKVM_ZKM, or ZKVM_PICO)
  * @param proof_ptr     Pointer to the proof binary data
  * @param proof_len     Length of the proof binary in bytes
+ * @param vkey_hash_ptr Pointer to the null-terminated vkey hash string
+ * @param vk_ptr        Pointer to the verification key data
+ * @param vk_len        Length of the verification key in bytes
  * @param block_root_ptr Pointer to the expected block root (must be 32 bytes)
  * @return VERIFY_SUCCESS (1) if verified, VERIFY_FAILED (0) if invalid, VERIFY_ERROR (2) if error
  */
@@ -45,6 +48,9 @@ uint8_t verify_ethproof(
     uint8_t zkvm_type,
     const uint8_t* proof_ptr,
     size_t proof_len,
+    const char* vkey_hash_ptr,
+    const uint8_t* vk_ptr,
+    size_t vk_len,
     const uint8_t* block_root_ptr
 );
 
