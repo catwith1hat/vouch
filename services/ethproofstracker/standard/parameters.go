@@ -31,6 +31,7 @@ type parameters struct {
 	beaconBlockRootProvider eth2client.BeaconBlockRootProvider
 	scheduler               scheduler.Service
 	baseURL                 string
+	apiKey                  string
 	pollInterval            time.Duration
 	timeout                 time.Duration
 	cacheSize               int
@@ -86,6 +87,13 @@ func WithScheduler(scheduler scheduler.Service) Parameter {
 func WithBaseURL(baseURL string) Parameter {
 	return parameterFunc(func(p *parameters) {
 		p.baseURL = baseURL
+	})
+}
+
+// WithAPIKey sets the ethproofs API key.
+func WithAPIKey(apiKey string) Parameter {
+	return parameterFunc(func(p *parameters) {
+		p.apiKey = apiKey
 	})
 }
 

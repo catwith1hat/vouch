@@ -142,6 +142,7 @@ func fetchHeadELHash(endpoint string) (phase0.Root, phase0.Epoch, error) {
 
 func main() {
 	beaconNodePtr := flag.String("beacon-node", "", "URL of beacon node to fetch head block from")
+	apiURLPtr := flag.String("api-url", "", "Ethproofs API base URL (default: https://ethproofs.org/api/v0)")
 	flag.Parse()
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
@@ -175,6 +176,18 @@ func main() {
 	rootProvider := &MockBeaconBlockRootProvider{root: currentRoot}
 	sched := &CapturingScheduler{jobs: make(map[string]scheduler.JobFunc)}
 
+	// Configure parameters
+	apiURL := "https://ethproofs.org/api/v0"
+	if *apiURLPtr != "" {
+		apiURL = *apiURLPtr
+	}
+	apiKey := os.Getenv("ETHPROOFS_API_KEY")
+
+	fmt.Printf("[Test] Using API URL: %s\n", apiURL)
+	if apiKey != "" {
+		fmt.Println("[Test] API Key detected")
+	}
+
 	fmt.Println("[Test] Initializing Service (Fetching VKeys)...")
 	tracker, err := standard.New(ctx,
 		standard.WithMonitor(monitor),
@@ -183,6 +196,8 @@ func main() {
 		standard.WithBeaconBlockRootProvider(rootProvider),
 		standard.WithScheduler(sched),
 		standard.WithPollInterval(time.Second),
+		standard.WithBaseURL(apiURL),
+		standard.WithAPIKey(apiKey),
 	)
 
 	if err != nil {

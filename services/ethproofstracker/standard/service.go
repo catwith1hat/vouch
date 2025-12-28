@@ -36,6 +36,7 @@ type Service struct {
 	beaconBlockRootProvider eth2client.BeaconBlockRootProvider
 	httpClient              *http.Client
 	ethproofsBaseURL        string
+	apiKey                  string
 	timeout                 time.Duration
 	cacheSize               int
 
@@ -80,6 +81,7 @@ func New(ctx context.Context, params ...Parameter) (*Service, error) {
 			Timeout: parameters.timeout,
 		},
 		ethproofsBaseURL: parameters.baseURL,
+		apiKey:           parameters.apiKey,
 		timeout:          parameters.timeout,
 		cacheSize:        parameters.cacheSize,
 		provenEpochs:     make(map[phase0.Epoch]phase0.Root),

@@ -214,9 +214,13 @@ func (s *Service) queryProofMetadata(ctx context.Context, blockRoot phase0.Root)
 		return "", "", ZkVMSP1, errors.Wrap(err, "failed to create HTTP request")
 	}
 
+	if s.apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
+	}
+
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return "", "", ZkVMSP1, errors.Wrap(err, "failed to query ethproofs API")
+		return "", "", ZkVMSP1, errors.Wrap(err, fmt.Sprintf("failed to query ethproofs API: %s", url))
 	}
 	defer resp.Body.Close()
 
@@ -245,7 +249,7 @@ func (s *Service) queryProofMetadata(ctx context.Context, blockRoot phase0.Root)
 		return "", "", ZkVMSP1, nil
 
 	default:
-		return "", "", ZkVMSP1, fmt.Errorf("ethproofs API returned status %d", resp.StatusCode)
+		return "", "", ZkVMSP1, fmt.Errorf("ethproofs API returned status %d for %s", resp.StatusCode, url)
 	}
 }
 
@@ -277,6 +281,10 @@ func (s *Service) downloadProof(ctx context.Context, proofID string) ([]byte, er
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create HTTP request")
+	}
+
+	if s.apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
 	}
 
 	resp, err := s.httpClient.Do(req)
@@ -315,14 +323,19 @@ func (s *Service) updateVerificationKeys(ctx context.Context) error {
 		return errors.Wrap(err, "failed to create HTTP request")
 	}
 
+	// Verification keys endpoint is public in current implementation, but good to add key if present
+	if s.apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.apiKey))
+	}
+
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "failed to query active verification keys")
+		return errors.Wrap(err, fmt.Sprintf("failed to query active verification keys: %s", url))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API returned status %d", resp.StatusCode)
+		return fmt.Errorf("API returned status %d for %s", resp.StatusCode, url)
 	}
 
 	var provers []struct {
