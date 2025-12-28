@@ -15,6 +15,7 @@ package standard
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/attestantio/go-eth2-client/spec/phase0"
@@ -24,10 +25,11 @@ import (
 )
 
 var (
-	attestationProcessTimer      prometheus.Histogram
-	attestationMarkTimer         prometheus.Histogram
-	attestationProcessLatestSlot prometheus.Gauge
-	attestationProcessRequests   *prometheus.CounterVec
+	attestationProcessTimer       prometheus.Histogram
+	attestationMarkTimer          prometheus.Histogram
+	attestationProcessLatestSlot  prometheus.Gauge
+	attestationProcessRequests    *prometheus.CounterVec
+	attestationBlockedNoProofCount *prometheus.CounterVec
 )
 
 func registerMetrics(ctx context.Context, monitor metrics.Service) error {
@@ -120,6 +122,21 @@ func registerPrometheusMetrics(_ context.Context) error {
 		}
 	}
 
+	attestationBlockedNoProofCount = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "vouch",
+		Subsystem: "attestation",
+		Name:      "blocked_no_proof_total",
+		Help:      "The number of attestations blocked due to unproven source epoch.",
+	}, []string{"epoch"})
+	if err := prometheus.Register(attestationBlockedNoProofCount); err != nil {
+		var alreadyRegisteredError prometheus.AlreadyRegisteredError
+		if ok := errors.As(err, &alreadyRegisteredError); ok {
+			attestationBlockedNoProofCount = alreadyRegisteredError.ExistingCollector.(*prometheus.CounterVec)
+		} else {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -139,4 +156,11 @@ func monitorAttestationsCompleted(started time.Time, slot phase0.Slot, count int
 		attestationProcessLatestSlot.Set(float64(slot))
 	}
 	attestationProcessRequests.WithLabelValues(result).Add(float64(count))
+}
+
+func monitorAttestationBlockedNoProof(epoch phase0.Epoch) {
+	if attestationBlockedNoProofCount == nil {
+		return
+	}
+	attestationBlockedNoProofCount.WithLabelValues(fmt.Sprintf("%d", epoch)).Inc()
 }

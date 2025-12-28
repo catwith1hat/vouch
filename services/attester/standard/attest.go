@@ -24,9 +24,11 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/electra"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/attestantio/vouch/services/attester"
+	"github.com/attestantio/vouch/services/ethproofstracker"
 	"github.com/attestantio/vouch/util"
 	"github.com/pkg/errors"
 	"github.com/prysmaticlabs/go-bitfield"
+	"github.com/spf13/viper"
 	e2wtypes "github.com/wealdtech/go-eth2-wallet-types/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -57,6 +59,14 @@ func (s *Service) Attest(ctx context.Context, duty *attester.Duty) ([]*spec.Vers
 	if err := s.validateAttestationData(ctx, duty, attestationData); err != nil {
 		monitorAttestationsCompleted(started, duty.Slot(), len(validatorIndices), "failed", startOfSlot)
 		return nil, err
+	}
+
+	// Validate source epoch proof if ethproofs tracker is enabled.
+	if s.ethproofsTracker != nil && viper.GetBool("ethproofstracker.enabled") {
+		if err := s.validateSourceEpochProof(ctx, attestationData); err != nil {
+			monitorAttestationsCompleted(started, duty.Slot(), len(validatorIndices), "failed", startOfSlot)
+			return nil, err
+		}
 	}
 
 	// Fetch the validating accounts.
@@ -382,4 +392,27 @@ func (s *Service) housekeepAttestedMap(_ context.Context,
 		delete(s.attested, epoch-2)
 		s.attestedMu.Unlock()
 	}
+}
+
+// validateSourceEpochProof validates that the source epoch has been proven by ethproofs.
+func (s *Service) validateSourceEpochProof(ctx context.Context, attestationData *phase0.AttestationData) error {
+	sourceEpoch := attestationData.Source.Epoch
+
+	// Check if source epoch is proven.
+	if !s.ethproofsTracker.(ethproofstracker.EpochProofChecker).IsEpochProven(ctx, sourceEpoch) {
+		s.log.Error().
+			Uint64("source_epoch", uint64(sourceEpoch)).
+			Str("source_root", fmt.Sprintf("%#x", attestationData.Source.Root)).
+			Msg("Source epoch not proven by ethproofs; blocking attestation")
+
+		monitorAttestationBlockedNoProof(sourceEpoch)
+
+		return fmt.Errorf("source epoch %d has not been proven by ethproofs", sourceEpoch)
+	}
+
+	s.log.Trace().
+		Uint64("source_epoch", uint64(sourceEpoch)).
+		Msg("Source epoch verified by ethproofs")
+
+	return nil
 }

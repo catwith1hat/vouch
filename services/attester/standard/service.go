@@ -23,6 +23,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/attestantio/vouch/services/accountmanager"
 	"github.com/attestantio/vouch/services/chaintime"
+	"github.com/attestantio/vouch/services/ethproofstracker"
 	"github.com/attestantio/vouch/services/metrics"
 	"github.com/attestantio/vouch/services/signer"
 	"github.com/attestantio/vouch/services/submitter"
@@ -43,6 +44,7 @@ type Service struct {
 	attestationDataProvider    eth2client.AttestationDataProvider
 	attestationsSubmitter      submitter.AttestationsSubmitter
 	beaconAttestationsSigner   signer.BeaconAttestationsSigner
+	ethproofsTracker           ethproofstracker.Service
 	attested                   map[phase0.Epoch]map[phase0.ValidatorIndex]struct{}
 	attestedMu                 sync.Mutex
 	electraForkEpoch           phase0.Epoch
@@ -94,6 +96,7 @@ func New(ctx context.Context, params ...Parameter) (*Service, error) {
 		attestationDataProvider:    parameters.attestationDataProvider,
 		attestationsSubmitter:      parameters.attestationsSubmitter,
 		beaconAttestationsSigner:   parameters.beaconAttestationsSigner,
+		ethproofsTracker:           parameters.ethproofsTracker,
 		attested:                   make(map[phase0.Epoch]map[phase0.ValidatorIndex]struct{}),
 		electraForkEpoch:           electraForkEpoch,
 		fuluForkEpoch:              fuluForkEpoch,

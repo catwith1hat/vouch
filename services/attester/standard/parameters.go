@@ -19,6 +19,7 @@ import (
 	eth2client "github.com/attestantio/go-eth2-client"
 	"github.com/attestantio/vouch/services/accountmanager"
 	"github.com/attestantio/vouch/services/chaintime"
+	"github.com/attestantio/vouch/services/ethproofstracker"
 	"github.com/attestantio/vouch/services/metrics"
 	"github.com/attestantio/vouch/services/signer"
 	"github.com/attestantio/vouch/services/submitter"
@@ -37,6 +38,7 @@ type parameters struct {
 	attestationsSubmitter      submitter.AttestationsSubmitter
 	validatingAccountsProvider accountmanager.ValidatingAccountsProvider
 	beaconAttestationsSigner   signer.BeaconAttestationsSigner
+	ethproofsTracker           ethproofstracker.Service
 }
 
 // Parameter is the interface for service parameters.
@@ -117,6 +119,13 @@ func WithValidatingAccountsProvider(provider accountmanager.ValidatingAccountsPr
 func WithBeaconAttestationsSigner(signer signer.BeaconAttestationsSigner) Parameter {
 	return parameterFunc(func(p *parameters) {
 		p.beaconAttestationsSigner = signer
+	})
+}
+
+// WithEthproofsTracker sets the ethproofs tracker service (optional).
+func WithEthproofsTracker(tracker ethproofstracker.Service) Parameter {
+	return parameterFunc(func(p *parameters) {
+		p.ethproofsTracker = tracker
 	})
 }
 

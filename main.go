@@ -54,6 +54,8 @@ import (
 	"github.com/attestantio/vouch/services/chaintime"
 	standardchaintime "github.com/attestantio/vouch/services/chaintime/standard"
 	standardcontroller "github.com/attestantio/vouch/services/controller/standard"
+	"github.com/attestantio/vouch/services/ethproofstracker"
+	standardethproofstracker "github.com/attestantio/vouch/services/ethproofstracker/standard"
 	"github.com/attestantio/vouch/services/graffitiprovider"
 	dynamicgraffitiprovider "github.com/attestantio/vouch/services/graffitiprovider/dynamic"
 	staticgraffitiprovider "github.com/attestantio/vouch/services/graffitiprovider/static"
@@ -258,6 +260,11 @@ func fetchConfig() error {
 	viper.SetDefault("submitter.style", "multinode")
 	viper.SetDefault("multiinstance.static-delay.attester-delay", time.Second)
 	viper.SetDefault("multiinstance.static-delay.proposer-delay", 2*time.Second)
+	viper.SetDefault("ethproofstracker.enabled", false)
+	viper.SetDefault("ethproofstracker.base-url", "https://ethproofs.org/api/v0")
+	viper.SetDefault("ethproofstracker.poll-interval", 12*time.Second)
+	viper.SetDefault("ethproofstracker.timeout", 2*time.Second)
+	viper.SetDefault("ethproofstracker.cache-size", 100)
 
 	// Set builder client defaults.
 	util.SetBuilderClientTimeoutDefaults()
@@ -350,6 +357,11 @@ func startServices(ctx context.Context,
 		return nil, nil, err
 	}
 
+	ethproofsTracker, err := startEthproofsTracker(ctx, monitor, chainTime, eth2Client, schedulerSvc)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to start ethproofs tracker service")
+	}
+
 	submitter, err := selectSubmitterStrategy(ctx, monitor, eth2Client)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to select submitter")
@@ -367,6 +379,7 @@ func startServices(ctx context.Context,
 		chainTime,
 		cacheSvc,
 		signerSvc,
+		ethproofsTracker,
 		blockRelay,
 		accountManager,
 		submitter,
@@ -699,6 +712,45 @@ func startProviders(ctx context.Context,
 	return graffitiProvider, beaconBlockProposalProvider, attestationDataProvider, aggregateAttestationProvider, nil
 }
 
+func startEthproofsTracker(ctx context.Context,
+	monitor metrics.Service,
+	chainTime chaintime.Service,
+	eth2Client eth2client.Service,
+	schedulerSvc scheduler.Service,
+) (
+	ethproofstracker.Service,
+	error,
+) {
+	if !viper.GetBool("ethproofstracker.enabled") {
+		log.Info().Msg("Ethproofs tracker disabled")
+		return nil, nil
+	}
+
+	// Select beacon block root provider (reuse existing strategy).
+	beaconBlockRootProvider, err := selectBeaconBlockRootProvider(ctx, monitor, eth2Client, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to select beacon block root provider")
+	}
+
+	log.Trace().Msg("Starting ethproofs tracker")
+	tracker, err := standardethproofstracker.New(ctx,
+		standardethproofstracker.WithLogLevel(util.LogLevel("ethproofstracker")),
+		standardethproofstracker.WithMonitor(monitor),
+		standardethproofstracker.WithChainTime(chainTime),
+		standardethproofstracker.WithBeaconBlockRootProvider(beaconBlockRootProvider),
+		standardethproofstracker.WithScheduler(schedulerSvc),
+		standardethproofstracker.WithBaseURL(viper.GetString("ethproofstracker.base-url")),
+		standardethproofstracker.WithPollInterval(viper.GetDuration("ethproofstracker.poll-interval")),
+		standardethproofstracker.WithTimeout(viper.GetDuration("ethproofstracker.timeout")),
+		standardethproofstracker.WithCacheSize(viper.GetInt("ethproofstracker.cache-size")),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return tracker, nil
+}
+
 func startAltairServices(ctx context.Context,
 	monitor metrics.Service,
 	eth2Client eth2client.Service,
@@ -780,6 +832,7 @@ func startSigningServices(ctx context.Context,
 	chainTime chaintime.Service,
 	cacheSvc cache.Service,
 	signerSvc signer.Service,
+	ethproofsTracker ethproofstracker.Service,
 	blockRelay blockrelay.Service,
 	accountManager accountmanager.Service,
 	submitterStrategy submitter.Service,
@@ -835,6 +888,7 @@ func startSigningServices(ctx context.Context,
 		standardattester.WithMonitor(monitor),
 		standardattester.WithValidatingAccountsProvider(accountManager.(accountmanager.ValidatingAccountsProvider)),
 		standardattester.WithBeaconAttestationsSigner(signerSvc.(signer.BeaconAttestationsSigner)),
+		standardattester.WithEthproofsTracker(ethproofsTracker),
 	)
 	if err != nil {
 		return nil, nil, nil, nil, errors.Wrap(err, "failed to start attester service")
