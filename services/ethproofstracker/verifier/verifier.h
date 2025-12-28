@@ -23,9 +23,10 @@ extern "C" {
 #endif
 
 /* ZkVM type identifiers */
-#define ZKVM_SP1   0
-#define ZKVM_ZKM   1
-#define ZKVM_PICO  2
+#define ZKVM_SP1    0
+#define ZKVM_ZKM    1
+#define ZKVM_PICO   2
+#define ZKVM_OPENVM 3
 
 /* Verification result codes */
 #define VERIFY_FAILED  0
@@ -35,7 +36,7 @@ extern "C" {
 /**
  * Verify a ZK proof from ethproofs.org
  *
- * @param zkvm_type     The zkVM type (ZKVM_SP1, ZKVM_ZKM, or ZKVM_PICO)
+ * @param zkvm_type     The zkVM type (ZKVM_SP1, ZKVM_ZKM, ZKVM_PICO, or ZKVM_OPENVM)
  * @param proof_ptr     Pointer to the proof binary data
  * @param proof_len     Length of the proof binary in bytes
  * @param vkey_hash_ptr Pointer to the null-terminated vkey hash string

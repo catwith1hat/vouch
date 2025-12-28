@@ -258,6 +258,8 @@ func parseZkvmType(zkvmID string) ZkVMType {
 		return ZkVMZKM
 	case "pico", "Pico":
 		return ZkVMPico
+	case "openvm", "OpenVM":
+		return ZkVMOpenVM
 	default:
 		// Default to SP1 (most common)
 		return ZkVMSP1
@@ -348,7 +350,7 @@ func (s *Service) updateVerificationKeys(ctx context.Context) error {
 		// Note: The API response 'vk_path' seems to contain the vkey hash in the lighthouse implementation.
 		// If the API evolves to include a specific 'vkey_hash' field, we should use that.
 		s.vkeyHashes[prover.ClusterID] = prover.VkPath
-		
+
 		s.log.Trace().
 			Str("cluster_id", prover.ClusterID).
 			Str("zkvm", prover.Zkvm).

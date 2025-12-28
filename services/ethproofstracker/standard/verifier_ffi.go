@@ -36,6 +36,8 @@ const (
 	ZkVMZKM ZkVMType = 1
 	// ZkVMPico represents Brevis's Pico zkVM
 	ZkVMPico ZkVMType = 2
+	// ZkVMOpenVM represents OpenVM zkVM
+	ZkVMOpenVM ZkVMType = 3
 )
 
 // VerifyResult represents the result of proof verification
