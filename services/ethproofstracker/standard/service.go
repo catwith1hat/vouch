@@ -113,7 +113,11 @@ func New(ctx context.Context, params ...Parameter) (*Service, error) {
 			// Update keys every hour.
 			return time.Now().Add(time.Hour), nil
 		},
-		s.updateVerificationKeys,
+		func(ctx context.Context) {
+			if err := s.updateVerificationKeys(ctx); err != nil {
+				s.log.Error().Err(err).Msg("Failed to update verification keys")
+			}
+		},
 	); err != nil {
 		return nil, errors.Wrap(err, "failed to schedule verification key update")
 	}
