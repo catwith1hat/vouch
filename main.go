@@ -180,6 +180,52 @@ func main2() int {
 
 	runtime.GOMAXPROCS(runtime.NumCPU() * 8)
 
+	// Standalone execution-proxy mode when no consensus beacon node is configured.
+	if !hasBeaconNodeConfig() && isExecutionProxyConfigured() {
+		monitor, err := startMonitor(ctx, nil, true)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to start metrics service")
+			return 1
+		}
+		if err := registerMetrics(monitor); err != nil {
+			log.Error().Err(err).Msg("Failed to register metrics")
+			return 1
+		}
+		setRelease(ReleaseVersion)
+
+		executionProxySvc, err := startExecutionProxy(ctx, majordomo, monitor)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to initialise execution proxy")
+			return 1
+		}
+		setReady(true)
+		log.Info().Str("listen_address", executionProxySvc.ListenAddress()).Msg("Execution proxy operational (standalone mode)")
+
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
+		<-sigCh
+
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := executionProxySvc.Shutdown(shutdownCtx); err != nil {
+			log.Warn().Err(err).Msg("Failed to shut down execution proxy cleanly")
+		}
+		log.Info().Msg("Stopping vouch")
+		return 0
+	}
+
+	// Start the execution proxy before connecting to beacon nodes so a consensus client
+	// configured to use Vouch as its EL never deadlocks waiting for Vouch at startup.
+	var executionProxySvc interface{ Shutdown(context.Context) error }
+	if isExecutionProxyConfigured() {
+		proxySvc, err := startExecutionProxy(ctx, majordomo, bootstrapMonitor)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to initialise execution proxy")
+			return 1
+		}
+		executionProxySvc = proxySvc
+	}
+
 	if err := e2types.InitBLS(); err != nil {
 		log.Error().Err(err).Msg("Failed to initialise BLS library")
 		return 1
@@ -210,6 +256,14 @@ func main2() int {
 			first = false
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+
+	if executionProxySvc != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := executionProxySvc.Shutdown(shutdownCtx); err != nil {
+			log.Warn().Err(err).Msg("Failed to shut down execution proxy cleanly")
+		}
 	}
 
 	log.Info().Msg("Stopping vouch")
@@ -287,9 +341,9 @@ func fetchConfig() error {
 		case errors.As(err, &viper.ConfigFileNotFoundError{}):
 			// It is allowable for Vouch to not have a configuration file, but only if
 			// we have the information from elsewhere (e.g. environment variables).  Check
-			// to see if we have any beacon nodes configured, as if not we aren't going to
-			// get very far anyway.
-			if util.BeaconNodeAddresses("") == nil {
+			// to see if we have any beacon nodes or execution proxy configured, as if not
+			// we aren't going to get very far anyway.
+			if util.BeaconNodeAddresses("") == nil && !isExecutionProxyConfigured() {
 				// Assume the underlying issue is that the configuration file is missing.
 				return errors.Wrap(err, "could not find the configuration file")
 			}

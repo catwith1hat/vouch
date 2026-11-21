@@ -359,6 +359,21 @@ tracing:
   client-key: 'file:///home/vouch/certs/server.key'
   ca-cert: 'file:///home/vouch/certs/ca.crt'
   # Vouch loads these credentials using the go-certmanager library.
+
+# executionproxy exposes an authenticated Engine API proxy for cross-client Pre-BAL execution verification.
+# See docs/executionproxy.md for full details and per-client JWT options.
+executionproxy:
+  listen-address: '0.0.0.0:18551'
+  jwt-secret: 'file:///home/vouch/jwt.hex'
+  timeout: '10s'
+  primary-el:
+    name: 'besu-primary'
+    url: 'http://localhost:8551'
+  secondary-els:
+    - name: 'geth-consumer'
+      url: 'http://localhost:8552'
+    - name: 'reth-consumer'
+      url: 'http://localhost:8553'
 ```
 
 ## Hierarchical configuration.
